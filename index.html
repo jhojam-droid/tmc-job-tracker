@@ -594,6 +594,7 @@ function renderDetail(){
       <div class="d-proj">${pn}</div>
       <div class="d-acts">
         <button class="btn btn-ghost btn-sm" onclick="openEditModal('${job.id}')">✏️ Edit</button>
+        <button class="btn btn-ghost btn-sm" onclick="copyJob('${job.id}')" title="Create a new job with this client's info">⧉ Copy</button>
         <button class="btn btn-ghost btn-sm" onclick="openCalModal('${job.id}')">📅 Cal</button>
         <button class="btn btn-ghost btn-sm" onclick="copyQBPrompt('${job.id}')">🤖 QB</button>
         <button class="btn btn-danger btn-sm" onclick="deleteJob('${job.id}')">🗑</button>
@@ -977,6 +978,17 @@ function openEditModal(id){
   document.querySelector('#jobOverlay .modal-title').textContent='Edit Job';
   document.querySelector('#jobOverlay .modal-actions .btn-primary').textContent='Save Changes';
   document.getElementById('jobOverlay').classList.add('open');
+}
+function copyJob(id){
+  openEditModal(id);
+  editJobId=null; // save as a NEW job instead of updating the old one
+  document.getElementById('f-date').value=new Date().toISOString().slice(0,10);
+  document.getElementById('f-timewindow').value='';
+  document.getElementById('customTimeGroup').style.display='none';
+  document.getElementById('customTimeGroupEnd').style.display='none';
+  document.getElementById('f-notes').value='';
+  document.querySelector('#jobOverlay .modal-title').textContent='New Job (Copy)';
+  document.querySelector('#jobOverlay .modal-actions .btn-primary').textContent='Create Job';
 }
 ['jobOverlay','calOverlay','settingsOverlay','labOverlay','emailOverlay'].forEach(id=>{
   document.getElementById(id).addEventListener('click',e=>{ if(e.target===document.getElementById(id)) document.getElementById(id).classList.remove('open'); });
