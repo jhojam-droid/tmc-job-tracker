@@ -230,7 +230,12 @@ body{background:var(--bg);color:var(--text);font-family:'Calibri',sans-serif;fon
     <div class="sb-item" onclick="setFilter('unpaid',this)">Unpaid</div>
     <div class="sb-item" onclick="setFilter('paid',this)">Paid</div>
   </div>
-  <div class="job-list" id="jobList"></div>
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+    <div style="padding:12px 16px 0 16px">
+      <input class="mi" id="searchBox" placeholder="🔍 Search name, phone, email, or address…" oninput="searchQuery=this.value;renderJobs()">
+    </div>
+    <div class="job-list" id="jobList"></div>
+  </div>
   <div class="detail" id="detailPanel">
     <div class="empty"><div class="empty-icon">📋</div><div class="empty-title">Select a job</div><div style="font-size:12px;text-align:center;max-width:180px">Click any job to view and manage</div></div>
   </div>
@@ -435,6 +440,7 @@ const SPORELYTICS_EMAIL = 'info@sporelytics.com';
 let jobs = JSON.parse(localStorage.getItem('tmc_jobs_v3')||'[]');
 let serviceTypes = JSON.parse(localStorage.getItem('tmc_services')||JSON.stringify(DEFAULT_SERVICES));
 let selectedId = null, currentFilter = 'all', calJobId = null, labJobId = null, labSamples = [];
+let searchQuery = '';
 let reportJobId = null, activeReportType = null, editJobId = null;
 
 function save(){ localStorage.setItem('tmc_jobs_v3',JSON.stringify(jobs)); }
@@ -538,6 +544,14 @@ function renderJobs(){
   else if(currentFilter==='paid') list=list.filter(j=>j.paymentStatus==='Paid');
   else if(currentFilter==='report_due') list=list.filter(j=>reportDueStatus(j)!==null);
   else if(currentFilter!=='all') list=list.filter(j=>j.status===currentFilter||j.serviceType===currentFilter);
+  if(searchQuery.trim()){
+    const q=searchQuery.trim().toLowerCase(), digits=q.replace(/\D/g,'');
+    list=list.filter(j=>{
+      const hay=[j.clientName,j.company,j.email,j.billingEmail,j.address,j.billingAddress,j.contactPerson,j.billTo].filter(Boolean).join(' ').toLowerCase();
+      const phones=[j.phone,j.contactPhone].filter(Boolean).join(' ').replace(/\D/g,'');
+      return hay.includes(q)||(digits.length>=3&&phones.includes(digits));
+    });
+  }
   if(!list.length){ container.innerHTML=`<div class="empty"><div class="empty-icon">🔍</div><div class="empty-title">No jobs found</div></div>`; renderStats();renderCounts();return; }
   container.innerHTML=list.map(j=>{
     const st=SM[j.status]||STATUSES[0];
