@@ -463,9 +463,9 @@ function reportTypeLabel(rts){ if(!rts||!rts.length) return ''; return rts.join(
 
 // ── REPORT DUE DATE LOGIC ──
 // Report is considered due 3 days after the appointment date.
-// "Overdue" = scheduled date + 3 days < today AND job is not closed/report_sent/invoice
+// "Overdue" = scheduled date + 3 days < today AND job is not report_sent/closed
 const REPORT_DUE_DAYS = 3;
-const ACTIVE_STATUSES_FOR_DUE = new Set(['scheduled','lab_sent','results_in','report']);
+const ACTIVE_STATUSES_FOR_DUE = new Set(['scheduled','lab_sent','results_in','report','invoice']);
 
 function getReportDueDate(job){
   if(!job.date) return null;
@@ -475,7 +475,7 @@ function getReportDueDate(job){
 }
 
 function reportDueStatus(job){
-  // Only flag jobs that are active (not closed/report_sent/invoice/paid)
+  // Only flag jobs that are still open (not report_sent/closed)
   if(!ACTIVE_STATUSES_FOR_DUE.has(job.status)) return null;
   if(!job.date) return null;
   const due = getReportDueDate(job);
