@@ -77,6 +77,8 @@ body{background:var(--bg);color:var(--text);font-family:'Calibri',sans-serif;fon
 /* Report overdue badge */
 .badge-overdue{background:#2d1a00;color:#fb923c;border:1px solid #5a3000;font-size:10px;animation:pulse-amber 2s ease-in-out infinite;}
 @keyframes pulse-amber{0%,100%{opacity:1;}50%{opacity:.6;}}
+/* Needs-invoice badge: report already sent, no invoice number yet */
+.badge-needs-invoice{background:var(--red-bg);color:var(--red);border:1px solid #5a1a1a;font-size:10px;}
 
 .detail{width:440px;min-width:440px;background:var(--surface);border-left:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column;}
 .d-hdr{padding:18px 22px 14px;border-bottom:1px solid var(--border);}
@@ -224,6 +226,9 @@ body{background:var(--bg);color:var(--text);font-family:'Calibri',sans-serif;fon
     <div class="sb-item" onclick="setFilter('invoice',this)">Invoice <span class="sb-count" id="cnt-invoice">0</span></div>
     <div class="sb-item" onclick="setFilter('report_sent',this)">Report Sent <span class="sb-count" id="cnt-report_sent">0</span></div>
     <div class="sb-item" onclick="setFilter('closed',this)">Closed <span class="sb-count" id="cnt-closed">0</span></div>
+    <div class="sb-label" style="margin-top:6px">Action Needed</div>
+    <div class="sb-item" onclick="setFilter('ready_report',this)">📝 Ready for Report <span class="sb-count" id="cnt-ready_report">0</span></div>
+    <div class="sb-item" onclick="setFilter('needs_invoice',this)">🧾 Needs Invoice <span class="sb-count" id="cnt-needs_invoice">0</span></div>
     <div class="sb-label" style="margin-top:6px">Reminders</div>
     <div class="sb-item" onclick="setFilter('report_due',this)">⏰ Report Due <span class="sb-count" id="cnt-report_due">0</span></div>
     <div class="sb-label" style="margin-top:6px">Payment</div>
@@ -516,17 +521,24 @@ function addServiceType(){ const v=document.getElementById('newSvcInput').value.
 function removeServiceType(i){ serviceTypes.splice(i,1); saveServices(); renderServiceTags(); populateServiceSelect('f-service'); }
 
 // ── STATS ──
+function jobNeedsInvoice(j){ return j.status==='report_sent' && (!j.invoiceNumber || !j.invoiceNumber.trim()); }
+function jobReadyForReport(j){ return j.status==='invoice'; }
+
 function renderStats(){
   const total=jobs.length, active=jobs.filter(j=>j.status!=='closed').length;
   const inv=jobs.filter(j=>j.status==='invoice'&&j.invoiceSub!=='Paid').length;
   const closed=jobs.filter(j=>j.status==='closed').length;
   const overdue=jobs.filter(j=>reportDueStatus(j)!==null).length;
+  const readyReport=jobs.filter(jobReadyForReport).length;
+  const needsInvoice=jobs.filter(jobNeedsInvoice).length;
   document.getElementById('statsBar').innerHTML=`
     <div class="stat"><div class="stat-val">${total}</div><div class="stat-label">Total</div></div>
     <div class="stat"><div class="stat-val" style="color:var(--blue)">${active}</div><div class="stat-label">Active</div></div>
-    <div class="stat"><div class="stat-val" style="color:var(--amber)">${inv}</div><div class="stat-label">Invoice Pending</div></div>
+    <div class="stat"><div class="stat-val" style="color:var(--amber)">${inv}</div><div class="stat-label">Payment Pending</div></div>
     <div class="stat"><div class="stat-val" style="color:var(--green)">${closed}</div><div class="stat-label">Closed</div></div>
-    ${overdue?`<div class="stat"><div class="stat-val" style="color:var(--orange)">${overdue}</div><div class="stat-label">Report Due</div></div>`:''}`;
+    ${overdue?`<div class="stat"><div class="stat-val" style="color:var(--orange)">${overdue}</div><div class="stat-label">Report Due</div></div>`:''}
+    ${readyReport?`<div class="stat"><div class="stat-val" style="color:var(--teal)">${readyReport}</div><div class="stat-label">Ready for Report</div></div>`:''}
+    ${needsInvoice?`<div class="stat"><div class="stat-val" style="color:var(--purple)">${needsInvoice}</div><div class="stat-label">Needs Invoice</div></div>`:''}`;
 }
 function renderCounts(){
   const cnt={}; STATUSES.forEach(s=>cnt[s.id]=0); jobs.forEach(j=>{if(cnt[j.status]!==undefined)cnt[j.status]++;});
@@ -534,6 +546,10 @@ function renderCounts(){
   Object.entries(cnt).forEach(([k,v])=>{const el=document.getElementById('cnt-'+k);if(el)el.textContent=v;});
   const due=jobs.filter(j=>reportDueStatus(j)!==null).length;
   const el=document.getElementById('cnt-report_due'); if(el) el.textContent=due;
+  const rr=jobs.filter(jobReadyForReport).length;
+  const elRR=document.getElementById('cnt-ready_report'); if(elRR) elRR.textContent=rr;
+  const ni=jobs.filter(jobNeedsInvoice).length;
+  const elNI=document.getElementById('cnt-needs_invoice'); if(elNI) elNI.textContent=ni;
 }
 
 // ── RENDER JOBS ──
@@ -543,6 +559,8 @@ function renderJobs(){
   if(currentFilter==='unpaid') list=list.filter(j=>j.paymentStatus!=='Paid'&&j.status!=='closed');
   else if(currentFilter==='paid') list=list.filter(j=>j.paymentStatus==='Paid');
   else if(currentFilter==='report_due') list=list.filter(j=>reportDueStatus(j)!==null);
+  else if(currentFilter==='ready_report') list=list.filter(jobReadyForReport);
+  else if(currentFilter==='needs_invoice') list=list.filter(jobNeedsInvoice);
   else if(currentFilter!=='all') list=list.filter(j=>j.status===currentFilter||j.serviceType===currentFilter);
   if(searchQuery.trim()){
     const q=searchQuery.trim().toLowerCase(), digits=q.replace(/\D/g,'');
@@ -562,10 +580,11 @@ function renderJobs(){
     const winLabel=j.timeStart?windowLabel(j.timeStart,j.timeEnd):'';
     const ds=reportDueStatus(j);
     const dueBadge=ds?(ds.type==='overdue'?`<span class="badge badge-overdue">🚨 ${ds.days}d overdue</span>`:(ds.type==='due-today'?`<span class="badge badge-overdue">⏰ Due today</span>`:'')):'' ;
+    const needsInvBadge=jobNeedsInvoice(j)?`<span class="badge badge-needs-invoice">🧾 No invoice yet</span>`:'';
     return `<div class="job-card ${selectedId===j.id?'selected':''}" onclick="selectJob('${j.id}')">
       <div class="jc-top"><div><div class="jc-name">${j.clientName}</div><div class="jc-project">${projectName(j)}</div></div>
       <div class="jc-date">${j.date?fmtDateShort(j.date)+(winLabel?'\n'+winLabel:''):'—'}</div></div>
-      <div class="jc-meta"><span class="badge ${st.cls}"><span class="bd"></span>${st.label}</span>${subBadge}${rtBadge}${dueBadge}<span class="badge badge-svc">${j.serviceType}</span></div></div>`;
+      <div class="jc-meta"><span class="badge ${st.cls}"><span class="bd"></span>${st.label}</span>${subBadge}${rtBadge}${dueBadge}${needsInvBadge}<span class="badge badge-svc">${j.serviceType}</span></div></div>`;
   }).join('');
   renderStats();renderCounts();
 }
