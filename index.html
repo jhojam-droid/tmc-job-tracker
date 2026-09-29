@@ -29,7 +29,7 @@ a{color:inherit}
 .btn-danger{color:var(--red);border-color:var(--red-bd)}
 
 .wrap{max-width:1100px;margin:0 auto;padding:18px 20px 60px}
-.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px}
 .tile{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;cursor:pointer;text-align:left;font-family:inherit;color:inherit}
 .tile:hover{border-color:var(--border2)}
 .tile.active{border-color:var(--green);background:var(--green-bg)}
@@ -37,6 +37,9 @@ a{color:inherit}
 .tile .l{font-size:12px;color:var(--text2);margin-top:4px}
 .tile.warn .n{color:var(--red)}
 .tile.amber .n{color:var(--amber)}
+.tile.muted .n{color:var(--text2)}
+tr.closed td{opacity:.6}
+.closed-tag{display:inline-block;font-size:11px;font-weight:700;color:var(--green);border:1px solid var(--green-dark);background:var(--green-bg);border-radius:5px;padding:1px 6px;margin-left:6px;vertical-align:middle}
 
 .search{width:100%;padding:10px 14px;border-radius:8px;border:1px solid var(--border2);background:var(--surface);color:var(--text);font-family:inherit;font-size:15px;margin-bottom:12px}
 .search:focus{outline:none;border-color:var(--green)}
@@ -52,7 +55,7 @@ tr:hover td{background:#191e1a}
 .svc{font-size:13px;color:var(--text2)}
 .date{white-space:nowrap;font-size:14px}
 
-.chk{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:96px;padding:7px 10px;border-radius:8px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;border:1px solid}
+.chk{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:88px;padding:7px 10px;border-radius:8px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;border:1px solid}
 .chk.no{background:var(--red-bg);color:var(--red);border-color:var(--red-bd)}
 .chk.yes{background:var(--green-bg);color:var(--green);border-color:var(--green-dark)}
 .chk.na{background:var(--surface2);color:var(--text3);border-color:var(--border)}
@@ -77,6 +80,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--green)}
 
 @media (max-width:760px){
   .tiles{grid-template-columns:repeat(2,1fr)}
+  td.row-actions{display:inline-block}
   table,thead,tbody,tr,td{display:block}
   thead{display:none}
   table{background:none;border:none}
@@ -104,7 +108,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--green)}
   <div class="tiles" id="tiles"></div>
   <input class="search" id="search" placeholder="🔍 Search name, address, or invoice #" oninput="render()">
   <div id="list"></div>
-  <div class="hint">Click a red ✗ to mark it done. Click a green ✓ to undo.</div>
+  <div class="hint">Click a red ✗ to mark it done. Click a green ✓ to undo. When Report In, Report Out, Invoice and Paid are all ✓, the job moves to <b>Archive / Closed</b>. ✉ opens a confirmation email in Gmail.</div>
 </div>
 
 <!-- Job modal -->
@@ -116,6 +120,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--green)}
       <div class="full"><label>Address *</label><input id="f-address"></div>
       <div><label>Appointment date</label><input type="date" id="f-date"></div>
       <div><label>Service</label><select id="f-service"></select></div>
+      <div><label>Arrival window — start</label><input type="time" id="f-tstart"></div>
+      <div><label>Arrival window — end</label><input type="time" id="f-tend"></div>
       <div><label>Phone</label><input id="f-phone"></div>
       <div><label>Email</label><input id="f-email"></div>
       <div class="full"><label>Invoice #</label><input id="f-invoice" placeholder="Leave blank if not invoiced yet"></div>
@@ -157,27 +163,34 @@ function upgrade(){
     j.paid = j.paymentStatus==='Paid' || j.invoiceSub==='Paid' || (st==='closed' && !j.paymentStatus);
     j.simpleV=1; changed=true;
   });
+  // v2: new 'Report Out' step. Existing jobs with the report already checked count as sent out.
+  jobs.forEach(j=>{ if(j.simpleV>=2) return; j.reportOut=!!j.reportDone; j.simpleV=2; syncStatus(j); changed=true; });
   if(changed) save();
 }
 // Keep the old status field roughly in sync so the Full version still makes sense.
 function syncStatus(j){
-  if(j.reportDone && j.invoiceDone && j.paid) j.status='closed';
-  else if(j.reportDone) j.status='report_sent';
+  if(isClosed(j)) j.status='closed';
+  else if(j.reportOut) j.status='report_sent';
   else if(j.status==='closed'||j.status==='report_sent') j.status='report';
   j.paymentStatus = j.paid ? 'Paid' : (j.invoiceDone ? 'Invoiced' : (j.paymentStatus==='Waived'?'Waived':''));
 }
 
+function isClosed(j){ return !!(j.reportDone && j.reportOut && j.invoiceDone && j.paid); }
+const active = j => !isClosed(j);
 const past = j => !j.date || j.date<=today();   // appointment already happened
 const needsReport = j => !j.reportDone && past(j);
+const needsOut = j => j.reportDone && !j.reportOut;
 const needsInvoice = j => !j.invoiceDone && past(j);
 const unpaid = j => j.invoiceDone && !j.paid;
 const upcoming = j => j.date && j.date>today();
 
 const FILTERS={
-  all:{l:'All jobs',f:()=>true},
+  all:{l:'Active jobs',f:active},
   report:{l:'No report yet',f:needsReport,cls:'warn'},
+  out:{l:'Report in, not out',f:needsOut,cls:'amber'},
   invoice:{l:'No invoice yet',f:needsInvoice,cls:'warn'},
   unpaid:{l:'Invoiced, not paid',f:unpaid,cls:'amber'},
+  closed:{l:'Archive / Closed',f:isClosed,cls:'muted'},
 };
 
 function renderTiles(){
@@ -189,43 +202,48 @@ function setFilter(k){ filter=filter===k&&k!=='all'?'all':k; render(); }
 function render(){
   renderTiles();
   const q=document.getElementById('search').value.trim().toLowerCase();
-  let list=jobs.filter(FILTERS[filter].f);
+  let list=(q&&filter==='all')?jobs.slice():jobs.filter(FILTERS[filter].f); // searching from Active also finds archived jobs
   if(q) list=list.filter(j=>[j.clientName,j.company,j.address,j.invoiceNumber,j.email,j.phone].filter(Boolean).join(' ').toLowerCase().includes(q));
   list.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const el=document.getElementById('list');
-  if(!list.length){ el.innerHTML=`<div class="empty">${filter==='all'&&!q?'No jobs yet — click <b>+ New Job</b> or <b>Import</b>.':'Nothing here 🎉'}</div>`; return; }
-  el.innerHTML=`<table><thead><tr><th>Client</th><th>Date</th><th>Service</th><th class="c">Report</th><th class="c">Invoice</th><th class="c">Paid</th><th></th></tr></thead><tbody>${
+  if(!list.length){ el.innerHTML=`<div class="empty">${filter==='all'&&!q?'No active jobs — click <b>+ New Job</b>.':'Nothing here 🎉'}</div>`; return; }
+  el.innerHTML=`<table><thead><tr><th>Client</th><th>Date</th><th>Service</th><th class="c">Report</th><th class="c">Report Out</th><th class="c">Invoice</th><th class="c">Paid</th><th></th></tr></thead><tbody>${
     list.map(j=>{
       const up=upcoming(j);
       const rep = j.reportDone ? `<button class="chk yes" onclick="toggleReport('${j.id}')">✓ In</button>`
                 : `<button class="chk ${up?'na':'no'}" onclick="toggleReport('${j.id}')">${up?'Upcoming':'✗ Not yet'}</button>`;
+      const out = j.reportOut ? `<button class="chk yes" onclick="toggleOut('${j.id}')">✓ Sent</button>`
+                : !j.reportDone ? `<span class="chk na" style="cursor:default">—</span>`
+                : `<button class="chk no" onclick="toggleOut('${j.id}')">✗ Not out</button>`;
       const inv = j.invoiceDone ? `<button class="chk yes" onclick="toggleInvoice('${j.id}')">✓ <span class="sub">${j.invoiceNumber?'#'+esc(j.invoiceNumber):'Sent'}</span></button>`
                 : `<button class="chk ${up?'na':'no'}" onclick="toggleInvoice('${j.id}')">${up?'Upcoming':'✗ Not yet'}</button>`;
       const pd = !j.invoiceDone ? `<span class="chk na" style="cursor:default">—</span>`
                 : `<button class="chk ${j.paid?'yes':'no'}" onclick="togglePaid('${j.id}')">${j.paid?'✓ Paid':'✗ Unpaid'}</button>`;
-      return `<tr>
-        <td><div class="name">${esc(j.clientName)}</div><div class="addr">${esc(j.address)}</div></td>
+      return `<tr class="${isClosed(j)?'closed':''}">
+        <td><div class="name">${esc(j.clientName)}${isClosed(j)?'<span class="closed-tag">CLOSED</span>':''}</div><div class="addr">${esc(j.address)}</div></td>
         <td class="date">${fmtDate(j.date)}</td>
         <td class="svc">${esc(j.serviceType)}</td>
-        <td class="c">${rep}</td><td class="c">${inv}</td><td class="c">${pd}</td>
-        <td class="row-actions"><button class="icon-btn" title="Edit" onclick="openJob('${j.id}')">✎</button></td>
+        <td class="c">${rep}</td><td class="c">${out}</td><td class="c">${inv}</td><td class="c">${pd}</td>
+        <td class="row-actions"><button class="icon-btn" title="Send confirmation email" onclick="confirmEmail('${j.id}')">✉</button><button class="icon-btn" title="Edit" onclick="openJob('${j.id}')">✎</button></td>
       </tr>`;}).join('')
   }</tbody></table>`;
 }
 
 function get(id){ return jobs.find(j=>j.id===id); }
-function toggleReport(id){ const j=get(id); j.reportDone=!j.reportDone; j.reportDoneAt=j.reportDone?today():''; syncStatus(j); save(); render(); toast(j.reportDone?'Report marked in ✓':'Report set back to not yet'); }
+function afterToggle(j,wasClosed,msg){ syncStatus(j); save(); render(); const now=isClosed(j); toast(now&&!wasClosed?'🎉 All done — '+j.clientName+' moved to Archive / Closed':(!now&&wasClosed?'Reopened — moved back to Active':msg)); }
+function toggleReport(id){ const j=get(id),w=isClosed(j); j.reportDone=!j.reportDone; j.reportDoneAt=j.reportDone?today():''; if(!j.reportDone) j.reportOut=false; afterToggle(j,w,j.reportDone?'Report marked in ✓':'Report set back to not yet'); }
+function toggleOut(id){ const j=get(id),w=isClosed(j); j.reportOut=!j.reportOut; j.reportOutAt=j.reportOut?today():''; if(j.reportOut) j.reportDone=true; afterToggle(j,w,j.reportOut?'Report marked sent out ✓':'Report set back to not out'); }
 function toggleInvoice(id){
-  const j=get(id);
+  const j=get(id),w=isClosed(j);
   if(j.invoiceDone){ if(!confirm('Mark invoice as NOT sent for '+j.clientName+'?')) return; j.invoiceDone=false; j.paid=false; }
   else{
     const n=prompt('Invoice # for '+j.clientName+' (optional):', j.invoiceNumber||'');
     if(n===null) return;
     j.invoiceNumber=n.trim(); j.invoiceDone=true; j.invoiceDoneAt=today();
   }
-  syncStatus(j); save(); render(); toast(j.invoiceDone?'Invoice marked sent ✓':'Invoice set back to not yet');
+  afterToggle(j,w,j.invoiceDone?'Invoice marked sent ✓':'Invoice set back to not yet');
 }
-function togglePaid(id){ const j=get(id); j.paid=!j.paid; syncStatus(j); save(); render(); toast(j.paid?'Marked paid ✓':'Marked unpaid'); }
+function togglePaid(id){ const j=get(id),w=isClosed(j); j.paid=!j.paid; afterToggle(j,w,j.paid?'Marked paid ✓':'Marked unpaid'); }
 
 // Add / edit
 function openJob(id){
@@ -237,6 +255,8 @@ function openJob(id){
   document.getElementById('f-name').value=j.clientName||'';
   document.getElementById('f-address').value=j.address||'';
   document.getElementById('f-date').value=j.date||'';
+  document.getElementById('f-tstart').value=j.timeStart||'';
+  document.getElementById('f-tend').value=j.timeEnd||'';
   document.getElementById('f-phone').value=j.phone||'';
   document.getElementById('f-email').value=j.email||'';
   document.getElementById('f-invoice').value=j.invoiceNumber||'';
@@ -248,14 +268,45 @@ function closeJob(){ document.getElementById('jobOverlay').classList.remove('ope
 function saveJob(){
   const v=id=>document.getElementById(id).value.trim();
   if(!v('f-name')||!v('f-address')){ alert('Client name and address are required.'); return; }
-  const f={clientName:v('f-name'),address:v('f-address'),date:v('f-date'),serviceType:v('f-service'),phone:v('f-phone'),email:v('f-email'),invoiceNumber:v('f-invoice'),notes:v('f-notes')};
+  const f={clientName:v('f-name'),address:v('f-address'),date:v('f-date'),timeStart:v('f-tstart'),timeEnd:v('f-tend'),serviceType:v('f-service'),phone:v('f-phone'),email:v('f-email'),invoiceNumber:v('f-invoice'),notes:v('f-notes')};
   let j;
   if(editId){ j=get(editId); Object.assign(j,f); }
-  else{ j={id:Date.now().toString(),...f,status:'scheduled',reportSub:'',invoiceSub:'',reportTypes:[],paymentStatus:'',reportDone:false,invoiceDone:false,paid:false,simpleV:1,createdAt:new Date().toISOString()}; jobs.push(j); }
+  else{ j={id:Date.now().toString(),...f,status:'scheduled',reportSub:'',invoiceSub:'',reportTypes:[],paymentStatus:'',reportDone:false,reportOut:false,invoiceDone:false,paid:false,simpleV:2,createdAt:new Date().toISOString()}; jobs.push(j); }
   if(f.invoiceNumber && !j.invoiceDone){ j.invoiceDone=true; j.invoiceDoneAt=today(); }
   syncStatus(j); save(); closeJob(); render(); toast(editId?'Job updated ✓':'Job added ✓');
 }
 function deleteJob(){ if(!editId||!confirm('Delete this job?')) return; jobs=jobs.filter(j=>j.id!==editId); save(); closeJob(); render(); toast('Job deleted'); }
+
+// Confirmation email — opens a pre-filled Gmail compose window (review, then Send)
+function fmt12(t){ if(!t) return ''; let [h,m]=t.split(':').map(Number); const ap=h>=12?'PM':'AM'; h=h%12||12; return h+':'+String(m).padStart(2,'0')+' '+ap; }
+function confirmEmail(id){
+  const j=get(id);
+  if(!j.email){ toast('⚠ No client email on file — add it with ✎ first'); openJob(id); return; }
+  const win=j.timeStart?fmt12(j.timeStart)+(j.timeEnd?' – '+fmt12(j.timeEnd):''):'TBD';
+  const first=(j.clientName||'').split(' ')[0];
+  const subject=`Appointment Confirmation – ${j.serviceType} | The Mold Consultant LLC`;
+  const body=`Hi ${first},
+
+Your appointment has been scheduled! Here are your details:
+
+Service: ${j.serviceType}
+Date: ${j.date?fmtDate(j.date):'TBD'}
+Time Window: ${win}
+Property Address: ${j.address}
+
+Our consultant, Luke Hibbs, will arrive during your scheduled window. Please make sure the property is accessible.
+
+If you have any questions or need to reschedule, please call or text us at (405) 285-9100.
+
+Thank you for choosing The Mold Consultant LLC!
+
+Best regards,
+Jho
+The Mold Consultant LLC
+(405) 285-9100 | www.themoldconsultant.com`;
+  window.open('https://mail.google.com/mail/u/jho@themoldconsultant.com/?view=cm&fs=1&to='+encodeURIComponent(j.email)+'&su='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body),'_blank');
+  j.confirmSentAt=today(); save(); toast('✉ Gmail opened — review and hit Send');
+}
 
 // Backup
 function exportData(){ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify(jobs,null,2)],{type:'application/json'})); a.download='tmc_jobs_'+today()+'.json'; a.click(); toast('Exported'); }
